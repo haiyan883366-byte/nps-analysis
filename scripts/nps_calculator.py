@@ -12,20 +12,52 @@ import argparse
 import math
 
 
+def _find_col(df, candidates):
+    """在DataFrame列中查找第一个匹配的列名"""
+    for c in candidates:
+        if c in df.columns:
+            return c
+    raise KeyError(f"未找到所需列，候选: {candidates}")
+
+
+def _normalize_columns(df):
+    """统一列名，支持新旧两种底表格式"""
+    mapping = {}
+    # 推荐值列
+    rec_col = _find_col(df, ['【推荐值】', '推荐值'])
+    if rec_col != '推荐值':
+        mapping[rec_col] = '推荐值'
+    # 报名列
+    reg_col = _find_col(df, ['是否考虑报名长期班', '是否报名'])
+    if reg_col != '是否报名':
+        mapping[reg_col] = '是否报名'
+    # 年级列
+    grade_col = _find_col(df, ['年级', 'grade_names'])
+    if grade_col != '年级':
+        mapping[grade_col] = '年级'
+    # 辅导列
+    tutor_col = _find_col(df, ['辅导', 'counselor_name'])
+    if tutor_col != '辅导':
+        mapping[tutor_col] = '辅导'
+    if mapping:
+        df = df.rename(columns=mapping)
+    return df
+
+
 def calc_nps(group):
     """对一组用户计算NPS和转化指标"""
     total = len(group)
-    promoters = len(group[group['【推荐值】'] >= 9])
-    detractors = len(group[group['【推荐值】'] <= 6])
+    promoters = len(group[group['推荐值'] >= 9])
+    detractors = len(group[group['推荐值'] <= 6])
     nps = (promoters - detractors) / total * 100
     return pd.Series({
         '样本量': total,
         'NPS': round(nps, 1),
         '推荐': round(promoters / total * 100, 1),
         '贬损': round(detractors / total * 100, 1),
-        '要报': round(len(group[group['是否考虑报名长期班'] == 1]) / total * 100, 1),
-        '考虑': round(len(group[group['是否考虑报名长期班'] == 2]) / total * 100, 1),
-        '不报': round(len(group[group['是否考虑报名长期班'] == 3]) / total * 100, 1),
+        '要报': round(len(group[group['是否报名'] == 1]) / total * 100, 1),
+        '考虑': round(len(group[group['是否报名'] == 2]) / total * 100, 1),
+        '不报': round(len(group[group['是否报名'] == 3]) / total * 100, 1),
     })
 
 
@@ -136,6 +168,7 @@ def run(input_file, grade=None, min_samples=10, output_dir=None):
         output_dir = os.path.dirname(input_file) or '.'
 
     df = pd.read_excel(input_file)
+    df = _normalize_columns(df)
 
     # 筛选年级
     if grade and grade in df['年级'].unique():
