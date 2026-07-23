@@ -24,7 +24,7 @@ def _normalize_columns(df):
     """统一列名，支持新旧两种底表格式"""
     mapping = {}
     # 推荐值列
-    rec_col = _find_col(df, ['【推荐值】', '推荐值'])
+    rec_col = _find_col(df, ['【推荐值】', '推荐值', 'nps'])
     if rec_col != '推荐值':
         mapping[rec_col] = '推荐值'
     # 报名列
@@ -36,9 +36,13 @@ def _normalize_columns(df):
     if grade_col != '年级':
         mapping[grade_col] = '年级'
     # 辅导列
-    tutor_col = _find_col(df, ['辅导', 'counselor_name'])
+    tutor_col = _find_col(df, ['辅导', 'counselor_name', '辅导姓名'])
     if tutor_col != '辅导':
         mapping[tutor_col] = '辅导'
+    # 组长列
+    leader_col = _find_col(df, ['组长', '组长姓名'])
+    if leader_col != '组长':
+        mapping[leader_col] = '组长'
     if mapping:
         df = df.rename(columns=mapping)
     return df
