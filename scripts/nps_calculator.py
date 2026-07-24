@@ -1,10 +1,12 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-NPS分析与转化报告生成脚本 v2
+NPS分析与转化报告生成脚本 v3
 - 辅导维度 + 组长维度双表输出
 - Excel 带 ColorScale 色阶
 - 一个文件多 sheet（辅导维度 / 组长维度 / 汇总对比）
+- NPS口径: 推荐者>=10, 贬损者<=7 (底表1-11分制)
+- 数据校验: nps列值超出1-11时告警
 """
 
 import pandas as pd
@@ -52,15 +54,51 @@ def _normalize_columns(df):
     return df
 
 
+def _validate_nps_column(df, col='推荐值'):
+    """
+    校验 NPS 推荐值列是否在预期范围 1-11 内。
+    如果存在超出范围的值，打印告警信息。
+    返回: (是否正常, 异常数量, 异常值列表)
+    """
+    if col not in df.columns:
+        return True, 0, []
+    
+    vals = df[col].dropna()
+    invalid_mask = (vals < 1) | (vals > 11)
+    invalid_count = invalid_mask.sum()
+    
+    if invalid_count > 0:
+        invalid_vals = vals[invalid_mask].value_counts().to_dict()
+        print(f'\n{"="*60}')
+        print(f'⚠️  ⚠️  ⚠️  数据质量告警  ⚠️  ⚠️  ⚠️')
+        print(f'{"="*60}')
+        print(f'  NPS推荐值列 "{col}" 存在 {invalid_count} 条超出 1-11 范围的异常值')
+        print(f'  异常值分布: {invalid_vals}')
+        print(f'  总样本量: {len(df)}, 异常占比: {invalid_count/len(df)*100:.1f}%')
+        print(f'  ⚠️  请检查底表数据是否正确！')
+        print(f'  异常行将被自动剔除，NPS计算仅使用1-11分数据。')
+        print(f'{"="*60}\n')
+        return False, invalid_count, invalid_vals
+    
+    return True, 0, []
+
+
 # ═══════════════════════════════════════════════════════════
 # NPS 计算
 # ═══════════════════════════════════════════════════════════
 
 def calc_nps(group):
-    """对一组用户计算NPS和转化指标"""
+    """对一组用户计算NPS和转化指标
+    
+    NPS口径（底表1-11分制）:
+      - 推荐者: >=10 (对应标准0-10量表的9-10)
+      - 中立者: 8-9 (对应标准0-10量表的7-8)
+      - 贬损者: <=7 (对应标准0-10量表的0-6)
+      - NPS = 推荐者占比 - 贬损者占比
+    """
     total = len(group)
-    promoters = len(group[group['推荐值'] >= 9])
-    detractors = len(group[group['推荐值'] <= 6])
+    promoters = len(group[group['推荐值'] >= 10])
+    detractors = len(group[group['推荐值'] <= 7])
     nps = (promoters - detractors) / total * 100
     return pd.Series({
         '样本量': total,
@@ -467,6 +505,13 @@ def run(input_file, grade=None, min_samples=10, output_dir=None, sheet=0):
 
     df = pd.read_excel(input_file, sheet_name=sheet)
     df = _normalize_columns(df)
+
+    # ── 数据校验：nps值是否在 1-11 ──
+    is_valid, inv_count, inv_vals = _validate_nps_column(df, '推荐值')
+    if not is_valid:
+        # 剔除异常行，只保留 1-11 分的数据
+        valid_mask = (df['推荐值'] >= 1) & (df['推荐值'] <= 11) | df['推荐值'].isna()
+        df = df[valid_mask].copy()
 
     # 筛选年级
     if grade and grade in df['年级'].unique():
